@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.env/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large generated artifacts (indexes, models, data)
+*.pkl
+*.bin
+*.npy
+*.npz
+*.parquet
+*.csv
+
+# Local index / data folders
+data/
+indexes/
+index/
+output/
+
+# GCP / credentials
+*.json
+*.key
