@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify
+from collections import Counter, defaultdict
+import math
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
@@ -25,6 +27,9 @@ def search():
         list of up to 100 search results, ordered from best to worst where each 
         element is a tuple (wiki_id, title).
     '''
+    
+
+
     res = []
     query = request.args.get('query', '')
     if len(query) == 0:
@@ -55,7 +60,66 @@ def search_body():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
+    tokenize_fn = globals().get("tokenize") or globals().get("TOKENIZE_FN")
+    body_index = globals().get("body_index") or globals().get("BODY_INDEX")
+    body_index_path = globals().get("body_index_path") or globals().get("BODY_INDEX_PATH")
+    doc_len = globals().get("doc_len") or globals().get("DOC_LEN")
+    doc_norm = globals().get("doc_norm") or globals().get("DOC_NORM")
+    id_title = globals().get("id_title") or globals().get("ID_TITLE")
+    bucket_name = globals().get("BODY_INDEX_BUCKET") or globals().get("BUCKET_NAME")
 
+    missing = [
+        name for name, value in [
+            ("tokenize", tokenize_fn),
+            ("body_index", body_index),
+            ("body_index_path", body_index_path),
+            ("doc_len", doc_len),
+            ("doc_norm", doc_norm),
+            ("id_title", id_title),
+        ] if value is None
+    ]
+    if missing:
+      raise RuntimeError(f"search_body missing setup: {', '.join(missing)}")
+
+    tokens = tokenize_fn(query)
+    if not tokens:
+      return jsonify(res)
+
+    q_tf = Counter(tokens)
+    scores = defaultdict(float)
+    query_norm_sq = 0.0
+    n_docs = len(doc_len)
+
+    for term, tf_q in q_tf.items():
+      if term not in body_index.df:
+        continue
+      df = body_index.df[term]
+      if df == 0:
+        continue
+      idf = math.log10(n_docs / df)
+      w_q = tf_q * idf
+      query_norm_sq += w_q * w_q
+
+      posting_list = body_index.read_a_posting_list(body_index_path, term, bucket_name)
+      for doc_id, tf in posting_list:
+        dl = doc_len.get(doc_id)
+        if not dl:
+          continue
+        w_d = (tf / dl) * idf
+        scores[doc_id] += w_q * w_d
+
+    if query_norm_sq == 0.0:
+      return jsonify(res)
+    query_norm = math.sqrt(query_norm_sq)
+
+    scored = []
+    for doc_id, score in scores.items():
+      denom = doc_norm.get(doc_id, 0.0) * query_norm
+      if denom > 0:
+        scored.append((doc_id, score / denom))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    res = [(doc_id, id_title[doc_id]) for doc_id, _ in scored[:100] if doc_id in id_title]
     # END SOLUTION
     return jsonify(res)
 
